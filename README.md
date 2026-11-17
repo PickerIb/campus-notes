@@ -68,3 +68,4 @@ The `Dockerfile` lives there, rather than at the repository root, on purpose: wr
 the Day 3 afternoon exercise, and `docker build .` from the root must pick up the one you write,
 not this one. Nothing else in this repository depends on `.github/`, and you can ignore it
 entirely.
+protection test

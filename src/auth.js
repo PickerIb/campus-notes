@@ -2,12 +2,17 @@
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { md5 } = require('./db.js');
+const {
+  verifyPassword,
+  hashPassword
+} = require('./db.js');
 const { loginPage } = require('./views.js');
 
-// V3 -- the signing secret is committed to the repository. Anyone who can read
-// the source can mint a valid admin session. Fixed on Day 4.
-const JWT_SECRET = 'campus-notes-dev-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET must be configured with at least 32 characters.');
+}
 
 const router = express.Router();
 
@@ -19,28 +24,36 @@ router.post('/login', (req, res) => {
   const { username = '', password = '' } = req.body || {};
   const db = req.app.locals.db;
 
-  // V5 -- MD5, unsalted. See db.js.
-  const hash = md5(password);
-
-  // V1 -- BOTH the username and the password hash are concatenated into the
-  // SQL, so the whole credential check lives inside the query string. A
-  // username of
-  //   ' OR '1'='1' --
-  // comments the password condition out entirely and returns the first row in
-  // the table, which is the administrator. This is an authentication bypass,
-  // not merely an odd row selection. Fixed on Day 4.
+  // Use parameterized SQL to prevent SQL injection.
   const row = db
-    .prepare(
-      `SELECT * FROM users WHERE username = '${username}' AND password_hash = '${hash}'`
-    )
-    .get();
+    .prepare('SELECT * FROM users WHERE username = ?')
+    .get(username);
 
-  if (!row) {
-    return res.status(401).send(loginPage('Incorrect username or password.'));
+  if (!row || !verifyPassword(password, row.password_hash)) {
+    return res.status(401).send(
+      loginPage('Incorrect username or password.')
+    );
   }
 
-  const token = jwt.sign({ username: row.username, role: row.role }, JWT_SECRET);
-  res.cookie('session', token, { httpOnly: true, sameSite: 'lax' });
+  // Upgrade old MD5 hashes to scrypt after successful authentication.
+  if (!row.password_hash.startsWith('scrypt$')) {
+    db.prepare(
+      'UPDATE users SET password_hash = ? WHERE id = ?'
+    ).run(hashPassword(password), row.id);
+  }
+
+  const token = jwt.sign(
+    { username: row.username, role: row.role },
+    JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+
+  res.cookie('session', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  });
+
   res.redirect('/');
 });
 
@@ -51,7 +64,9 @@ router.post('/logout', (req, res) => {
 
 function currentUser(req) {
   const token = req.cookies && req.cookies.session;
+
   if (!token) return null;
+
   try {
     return jwt.verify(token, JWT_SECRET);
   } catch {
