@@ -2,6 +2,7 @@ node_modules/
 data/
 *.log
 .env
-
-# Added for the DevOps course
+.env.*
+!.env.example
 *.bak
+

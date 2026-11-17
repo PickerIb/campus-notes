@@ -1,0 +1,20 @@
+FROM node:24-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+RUN mkdir -p /data && chown 65532:0 /data && chmod 0755 /data
+FROM gcr.io/distroless/nodejs24-debian13
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 DB_PATH=/data/campus-notes.db
+COPY --from=deps --chown=65532:0 /app/node_modules ./node_modules
+COPY --chown=65532:0 package.json ./
+COPY --chown=65532:0 src ./src
+COPY --chown=65532:0 public ./public
+COPY --chown=65532:0 seed ./seed
+COPY --from=deps --chown=65532:0 /data /data
+USER 65532
+EXPOSE 3000
+
+
+HEALTHCHECK    --interval=15s     --timeout=3s    --start-period=10s    --retries=3  CMD
+["/nodejs"

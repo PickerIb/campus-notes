@@ -6,7 +6,7 @@
   "main": "src/server.js",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node --env-file-if-exists=.env src/server.js",
     "test": "node --test",
     "sast": "semgrep --config .semgrep/rules.yml --error src/"
   },
